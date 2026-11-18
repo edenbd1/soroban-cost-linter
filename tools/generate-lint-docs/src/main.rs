@@ -602,6 +602,20 @@ fn main() {
     let content = fs::read_to_string(&lib_path).expect("Failed to read lib.rs");
     let entries = parse_lib_rs(&content);
 
+    // An empty parse means the input is wrong (a partial checkout, or a
+    // `declare_lint!` shape this parser no longer recognises), not that the
+    // crate ships no lints. Regenerating from it would blank the docs.
+    if entries.is_empty() && !std::env::args().any(|a| a == "--allow-empty") {
+        eprintln!(
+            "Error: found no `declare_lint!` blocks in {}. Refusing to generate empty lint \
+             docs. Check that the file is fully checked out and that its `declare_lint!` \
+             blocks still have the `pub NAME, Level, \"description\"` shape this \
+             generator parses, or pass --allow-empty to write empty docs anyway.",
+            lib_path.display()
+        );
+        process::exit(1);
+    }
+
     let readme = generate_readme(&entries);
     let catalog = generate_catalog(&entries);
 
