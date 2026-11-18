@@ -446,15 +446,26 @@ fn generate_catalog(entries: &[LintEntry]) -> String {
     md
 }
 
-fn resolve_path(path: &str) -> PathBuf {
-    let explicit = std::env::args()
-        .position(|a| a == "--workspace-root")
-        .and_then(|idx| std::env::args().nth(idx + 1));
+/// The value of `--workspace-root`, or `None` when the flag is absent.
+///
+/// A flag with no usable value after it is an error: falling back to the
+/// current directory would silently regenerate the docs somewhere else.
+fn workspace_root_arg(args: &[String]) -> Result<Option<PathBuf>, String> {
+    let Some(idx) = args.iter().position(|a| a == "--workspace-root") else {
+        return Ok(None);
+    };
+    match args.get(idx + 1) {
+        Some(value) if !value.is_empty() && !value.starts_with("--") => {
+            Ok(Some(PathBuf::from(value)))
+        }
+        _ => Err("--workspace-root requires a path value".to_string()),
+    }
+}
 
-    if let Some(root) = explicit {
-        Path::new(&root).join(path)
-    } else {
-        Path::new(path).to_path_buf()
+fn resolve_path(root: Option<&Path>, path: &str) -> PathBuf {
+    match root {
+        Some(root) => root.join(path),
+        None => Path::new(path).to_path_buf(),
     }
 }
 
@@ -581,14 +592,21 @@ fn orphan_lint_pages(lints_dir: &Path, entries: &[LintEntry]) -> Vec<String> {
 }
 
 fn main() {
-    let check_mode = std::env::args().any(|a| a == "--check");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let check_mode = args.iter().any(|a| a == "--check");
+    let root = workspace_root_arg(&args).unwrap_or_else(|err| {
+        eprintln!("Error: {err}.");
+        eprintln!("Usage: generate-lint-docs [--check] [--workspace-root <path>]");
+        process::exit(2);
+    });
+    let root = root.as_deref();
 
-    let lib_path = resolve_path("soroban_cost_lints/src/lib.rs");
-    let readme_path = resolve_path("docs/lints/README.md");
-    let catalog_path = resolve_path("docs/lint_catalog.md");
-    let summary_path = resolve_path("docs/SUMMARY.md");
-    let docs_dir = resolve_path("docs");
-    let lints_dir = resolve_path("docs/lints");
+    let lib_path = resolve_path(root, "soroban_cost_lints/src/lib.rs");
+    let readme_path = resolve_path(root, "docs/lints/README.md");
+    let catalog_path = resolve_path(root, "docs/lint_catalog.md");
+    let summary_path = resolve_path(root, "docs/SUMMARY.md");
+    let docs_dir = resolve_path(root, "docs");
+    let lints_dir = resolve_path(root, "docs/lints");
 
     if !lib_path.exists() {
         eprintln!(
