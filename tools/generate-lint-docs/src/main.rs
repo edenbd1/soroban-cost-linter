@@ -446,6 +446,30 @@ fn generate_catalog(entries: &[LintEntry]) -> String {
     md
 }
 
+const USAGE: &str = "\
+Usage: generate-lint-docs [--check] [--workspace-root <path>]
+
+  --check                  Verify the generated docs are up to date; write nothing
+  --workspace-root <path>  Workspace to read and write (default: current directory)";
+
+/// The first argument this tool does not recognise, if any.
+///
+/// Anything unknown must stop the run before it writes: a misspelt `--check`
+/// would otherwise fall through to the write path and rewrite the docs.
+fn first_unknown_arg(args: &[String]) -> Option<&str> {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--check" => {}
+            "--workspace-root" => {
+                args.next();
+            }
+            other => return Some(other),
+        }
+    }
+    None
+}
+
 fn resolve_path(path: &str) -> PathBuf {
     let explicit = std::env::args()
         .position(|a| a == "--workspace-root")
@@ -581,7 +605,12 @@ fn orphan_lint_pages(lints_dir: &Path, entries: &[LintEntry]) -> Vec<String> {
 }
 
 fn main() {
-    let check_mode = std::env::args().any(|a| a == "--check");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(arg) = first_unknown_arg(&args) {
+        eprintln!("Error: unrecognised argument `{arg}`.\n\n{USAGE}");
+        process::exit(2);
+    }
+    let check_mode = args.iter().any(|a| a == "--check");
 
     let lib_path = resolve_path("soroban_cost_lints/src/lib.rs");
     let readme_path = resolve_path("docs/lints/README.md");
